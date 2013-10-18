@@ -32,6 +32,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 #include <eixx/connect/test_helper.hpp>
 #include <boost/interprocess/detail/atomic.hpp>
+#include <boost/concept_check.hpp>
 
 namespace EIXX_NAMESPACE {
 namespace connect {
@@ -39,7 +40,8 @@ namespace connect {
 //////////////////////////////////////////////////////////////////////////
 // enode_local
 template <typename Alloc, typename Mutex>
-basic_otp_node<Alloc, Mutex>::basic_otp_node(
+basic_otp_node<Alloc, Mutex>::
+basic_otp_node(
     boost::asio::io_service& a_io_svc,
     const std::string& a_nodename, const std::string& a_cookie,
     const Alloc& a_alloc, int8_t a_creation)
@@ -48,62 +50,79 @@ basic_otp_node<Alloc, Mutex>::basic_otp_node(
     , m_creation((a_creation < 0 ? time(NULL) : (int)a_creation) & 0x03)  // Creation counter
     , m_pid_count(1)
     , m_port_count(1)
-    , m_serial(0)
+    , m_refid0(1)
+    , m_refid1(0)
     , m_io_service(a_io_svc)
     , m_mailboxes(*this)
     , m_connections(atom_con_hash_fun::get_default_hash_size(), atom_con_hash_fun(&m_connections))
     , m_allocator(a_alloc)
+    , m_verboseness(verboseness::level())
+{}
+
+template <typename Alloc, typename Mutex>
+epid<Alloc> basic_otp_node<Alloc, Mutex>::
+create_pid()
 {
-    // Init the counters
-    m_refid[0]      = 1;
-    m_refid[1]      = 0;
-    m_refid[2]      = 0;
-    m_verboseness   = verboseness::level();
-}
+    int n;
+    while (true) {
+        n = m_pid_count.fetch_add(1, std::memory_order_relaxed);
+        if (n < 0x0fffffff /* 28 bits */) break;
 
-template <typename Alloc, typename Mutex>
-epid<Alloc> basic_otp_node<Alloc, Mutex>::create_pid() {
-    lock_guard<Mutex> guard(m_inc_lock);
-    epid<Alloc> p(m_nodename, m_pid_count++, m_serial, m_creation, m_allocator);
-    if (m_pid_count > 0x7fff) {
-        m_pid_count = 0;
-        m_serial = (m_serial + 1) & 0x1fff; /* 13 bits */
-    }
-    return p;
-}
-
-template <typename Alloc, typename Mutex>
-port<Alloc> basic_otp_node<Alloc, Mutex>::create_port() {
-    lock_guard<Mutex> guard(m_inc_lock);
-    port<Alloc> p(m_nodename, m_port_count++, m_creation, m_allocator);
-
-    if (m_port_count > 0x0fffffff) /* 28 bits */
-        m_port_count = 0;
-
-    return p;
-}
-
-template <typename Alloc, typename Mutex>
-ref<Alloc> basic_otp_node<Alloc, Mutex>::create_ref() {
-    lock_guard<Mutex> guard(m_inc_lock);
-    ref<Alloc> r(m_nodename, m_refid, m_creation, m_allocator);
-
-    // increment ref ids (3 ints: 18 + 32 + 32 bits)
-    if (++m_refid[0] > 0x3ffff) {
-        m_refid[0] = 0;
-
-        if (++m_refid[1] == 0)
-            ++m_refid[2];
+        if (m_pid_count.exchange(1, std::memory_order_acquire) == 1) {
+            n = 1;
+            break;
+        }
     }
 
-    return r;
+    return epid<Alloc>(m_nodename, n, m_creation, m_allocator);
+}
+
+template <typename Alloc, typename Mutex>
+port<Alloc> basic_otp_node<Alloc, Mutex>::
+create_port()
+{
+    int n;
+    while (true) {
+        n = m_port_count.fetch_add(1, std::memory_order_relaxed);
+        if (n < 0x0fffffff /* 28 bits */) break;
+
+        if (m_port_count.exchange(1, std::memory_order_acquire) == 1) {
+            n = 1;
+            break;
+        }
+    }
+
+    return port<Alloc>(m_nodename, n, m_creation, m_allocator);
+}
+
+template <typename Alloc, typename Mutex>
+ref<Alloc> basic_otp_node<Alloc, Mutex>::
+create_ref()
+{
+    uint_fast64_t n;
+    int mn;
+
+    while (true) {
+        n = m_refid0.fetch_add(1, std::memory_order_relaxed);
+        if (n) break;
+
+        int mo = m_refid1.load(std::memory_order_consume);
+        mn = mo+1;
+
+        if (mn > 0x3ffff) mn = 0;
+
+        if (m_refid1.compare_exchange_weak(mo, mn, std::memory_order_acquire))
+            break;
+    }
+
+    return ref<Alloc>(m_nodename, mn, n, m_creation, m_allocator);
 }
 
 template <typename Alloc, typename Mutex>
 template <typename CompletionHandler>
-void basic_otp_node<Alloc, Mutex>::connect(
-    CompletionHandler h, atom a_remote_node, atom a_cookie, size_t a_reconnect_secs)
-    throw(err_connection)
+void basic_otp_node<Alloc, Mutex>::
+connect(CompletionHandler h, const atom& a_remote_node, const atom& a_cookie,
+        size_t a_reconnect_secs) throw(err_connection)
 {
     lock_guard<Mutex> guard(m_lock);
     typename conn_hash_map::iterator it = m_connections.find(a_remote_node);
@@ -120,13 +139,15 @@ void basic_otp_node<Alloc, Mutex>::connect(
 }
 
 template <typename Alloc, typename Mutex>
-void basic_otp_node<Alloc, Mutex>::publish_port() throw (err_connection)
+void basic_otp_node<Alloc, Mutex>::
+publish_port() throw (err_connection)
 {
     throw err_connection("Not implemented!");
 }
 
 template <typename Alloc, typename Mutex>
-void basic_otp_node<Alloc, Mutex>::unpublish_port() throw (err_connection)
+void basic_otp_node<Alloc, Mutex>::
+unpublish_port() throw (err_connection)
 {
     throw std::runtime_error("Not implemented");
 }
@@ -155,7 +176,8 @@ report_status(report_level a_level, const connection_t* a_con, const std::string
 }
 
 template <typename Alloc, typename Mutex>
-void basic_otp_node<Alloc, Mutex>::deliver(const transport_msg<Alloc>& a_msg)
+void basic_otp_node<Alloc, Mutex>::
+deliver(const transport_msg<Alloc>& a_msg)
     throw (err_bad_argument, err_no_process, err_connection)
 {
     try {
@@ -172,8 +194,8 @@ void basic_otp_node<Alloc, Mutex>::deliver(const transport_msg<Alloc>& a_msg)
 
 template <typename Alloc, typename Mutex>
 template <typename ToProc>
-void basic_otp_node<Alloc, Mutex>::send(
-    const atom& a_to_node, ToProc a_to, const transport_msg<Alloc>& a_msg)
+void basic_otp_node<Alloc, Mutex>::
+send(const atom& a_to_node, ToProc a_to, const transport_msg<Alloc>& a_msg)
     throw (err_no_process, err_connection)
 {
     if (a_to_node == nodename()) {
@@ -188,8 +210,8 @@ void basic_otp_node<Alloc, Mutex>::send(
 }
 
 template <typename Alloc, typename Mutex>
-void inline basic_otp_node<Alloc, Mutex>::send(
-    const epid<Alloc>& a_to, const eterm<Alloc>& a_msg)
+void inline basic_otp_node<Alloc, Mutex>::
+send(const epid<Alloc>& a_to, const eterm<Alloc>& a_msg)
     throw (err_no_process, err_connection)
 {
     transport_msg<Alloc> tm;
@@ -198,8 +220,8 @@ void inline basic_otp_node<Alloc, Mutex>::send(
 }
 
 template <typename Alloc, typename Mutex>
-void inline basic_otp_node<Alloc, Mutex>::send(
-    const atom& a_node, const epid<Alloc>& a_to, const eterm<Alloc>& a_msg)
+void inline basic_otp_node<Alloc, Mutex>::
+send(const atom& a_node, const epid<Alloc>& a_to, const eterm<Alloc>& a_msg)
     throw (err_no_process, err_connection)
 {
     transport_msg<Alloc> tm;
@@ -208,8 +230,8 @@ void inline basic_otp_node<Alloc, Mutex>::send(
 }
 
 template <typename Alloc, typename Mutex>
-void inline basic_otp_node<Alloc, Mutex>::send(
-    const epid<Alloc>& a_from, const atom& a_to, const eterm<Alloc>& a_msg)
+void inline basic_otp_node<Alloc, Mutex>::
+send(const epid<Alloc>& a_from, const atom& a_to, const eterm<Alloc>& a_msg)
     throw (err_no_process, err_connection)
 {
     transport_msg<Alloc> tm;
@@ -218,8 +240,8 @@ void inline basic_otp_node<Alloc, Mutex>::send(
 }
 
 template <typename Alloc, typename Mutex>
-void inline basic_otp_node<Alloc, Mutex>::send(
-    const epid<Alloc>& a_from, const atom& a_to_node, const atom& a_to, const eterm<Alloc>& a_msg)
+void inline basic_otp_node<Alloc, Mutex>::
+send(const epid<Alloc>& a_from, const atom& a_to_node, const atom& a_to, const eterm<Alloc>& a_msg)
     throw (err_no_process, err_connection)
 {
     transport_msg<Alloc> tm;

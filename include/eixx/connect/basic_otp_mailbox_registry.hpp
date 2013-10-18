@@ -173,7 +173,7 @@ add(atom a_name, mailbox_ptr a_mbox)
 /// Unregister a name so that no mailbox is any longer associated with \a a_name.
 template <typename Alloc, typename Mutex>
 bool basic_otp_mailbox_registry<Alloc, Mutex>::
-erase(atom a_name)
+erase(const atom& a_name)
 {
     if (!a_name.empty())
         return false;

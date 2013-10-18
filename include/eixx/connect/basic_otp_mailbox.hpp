@@ -94,10 +94,17 @@ public:
     typedef std::function<
         void (basic_otp_mailbox<Alloc, Mutex>&,
               transport_msg<Alloc>*&,
-              ::boost::system::error_code&)
+              const boost::system::error_code&)
     > receive_handler_type;
 
     typedef util::async_queue<transport_msg<Alloc>*, Alloc> queue_type;
+
+    template<typename A, typename M> friend class basic_otp_node;
+    template<typename T, typename A> friend class util::async_queue;
+    template<typename _R, typename... _ArgTypes> friend class std::function;
+    template<typename _R, typename _F, typename... _Args> friend class std::_Function_handler;
+
+    void name(const atom& a_name) { m_name = a_name; }
 
 private:
     boost::asio::io_service&                m_io_service;
@@ -107,8 +114,7 @@ private:
     std::set<epid<Alloc> >                  m_links;
     std::map<ref<Alloc>, epid<Alloc> >      m_monitors;
     std::shared_ptr<queue_type>             m_queue;
-    std::chrono::time_point<
-        std::chrono::system_clock>          m_time_freed;   // Cache time of this mbox
+    std::chrono::system_clock::time_point   m_time_freed;   // Cache time of this mbox
     receive_handler_type                    m_handler;      // Called on async_receive
 
     void do_deliver(transport_msg<Alloc>* a_msg);
@@ -118,13 +124,19 @@ private:
 public:
     basic_otp_mailbox(
             basic_otp_node<Alloc, Mutex>& a_node, const epid<Alloc>& a_self,
+            const atom& a_name = atom(), boost::asio::io_service* a_svc = NULL,
+            const Alloc& a_alloc = Alloc())
+        : basic_otp_mailbox(a_node, a_self, a_name, 255, a_svc, a_alloc)
+    {}
+
+    basic_otp_mailbox(
+            basic_otp_node<Alloc, Mutex>& a_node, const epid<Alloc>& a_self,
             const atom& a_name = atom(), int a_queue_size = 255,
             boost::asio::io_service* a_svc = NULL, const Alloc& a_alloc = Alloc())
         : m_io_service(a_svc ? *a_svc : a_node.io_service())
         , m_node(a_node), m_self(a_self)
         , m_name(a_name)
         , m_queue(new queue_type(m_io_service, a_queue_size, a_alloc))
-        , m_time_freed(std::chrono::microseconds(0))
     {}
 
     ~basic_otp_mailbox() {
@@ -146,11 +158,8 @@ public:
     /// Indicates if mailbox doesn't have any pending messages
     bool                            empty()         const { return m_queue.empty(); }
 
-    void register(const atom& a_name) {
-        if (m_node.
-        m_name = a_name;
-
-    }
+    /// Register current mailbox under the given name
+    bool reg(const atom& a_name) { return m_node.register_mailbox(a_name, *this); }
 
     bool operator== (const basic_otp_mailbox& rhs) const { return self() == rhs.self(); }
     bool operator!= (const basic_otp_mailbox& rhs) const { return self() != rhs.self(); }
@@ -322,7 +331,7 @@ public:
 
 template <typename Alloc, typename Mutex>
 void basic_otp_mailbox<Alloc, Mutex>::
-close(const eterm<Alloc>& a_reason = am_normal, bool a_reg_remove = true) {
+close(const eterm<Alloc>& a_reason, bool a_reg_remove) {
     m_handler = nullptr;
     m_queue->reset();
     m_time_freed = std::chrono::system_clock::now();
@@ -336,7 +345,7 @@ template <typename Alloc, typename Mutex>
 bool basic_otp_mailbox<Alloc, Mutex>::
 operator() (transport_msg<Alloc>*& a_msg, const boost::system::error_code& ec)
 {
-    if (m_time_freed != std::chrono::microseconds(0) || !m_handler)
+    if (m_time_freed.time_since_epoch().count() == 0 || !m_handler)
         return false;
     m_handler(*this, a_msg, ec);
     if (a_msg) {
@@ -437,13 +446,6 @@ do_deliver(transport_msg<Alloc>* a_msg)
         a_msg->set_error_flag();
         m_queue.push_back(a_msg);
     }
-
-    // If the timer's expiration is set to some non-default value, it means that
-    // there's an outstanding asynchronous receive operation.  We cancel the timer
-    // that will cause invocation of the handler passed to the deadline timer
-    // upon executing mailbox->async_receive(Handler, Timeout).
-    if (m_deadline_timer.expires_at() != boost::asio::deadline_timer_ex::time_type())
-        m_deadline_timer.cancel();
 }
 
 template <typename Alloc, typename Mutex>
