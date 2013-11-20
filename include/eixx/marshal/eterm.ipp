@@ -122,12 +122,13 @@ void eterm<Alloc>::decode(const char* a_buf, int& idx, size_t a_size, const Allo
 
     if (ei_get_type(a_buf, &idx, &type, &sz) < 0)
         throw err_decode_exception("Cannot determine term type", idx);
-
     switch (type) {
     case ERL_ATOM_EXT: {
-        int b;
-        if (ei_decode_boolean(a_buf, &idx, &b) < 0)
+        int b, idx0 = idx;
+        if (ei_decode_boolean(a_buf, &idx, &b) < 0) {
+            idx = idx0;
             new (this) eterm<Alloc>(atom(a_buf, idx, a_size));
+        }
         else
             new (this) eterm<Alloc>((bool)b);
         break;
