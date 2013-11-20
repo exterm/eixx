@@ -52,6 +52,14 @@ AC_ARG_ENABLE(warnings,
      ],
 )
 
+AC_ARG_ENABLE(mt,
+     AC_HELP_STRING([--enable-mt],[enable multithread support [[default=no]]]),
+     [ if test "x$enable_mt" = "xyes" -o -z "$enable_mt"; then
+           AC_DEFINE([HAVE_MT_SUPPORT], [1], [multithread support])
+       fi
+     ],
+)
+
 # libtool
 LT_INIT([disable-static])
 

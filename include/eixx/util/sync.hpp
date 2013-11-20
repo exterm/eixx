@@ -26,14 +26,20 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 #include <eixx/marshal/defaults.hpp>
 
+#ifdef EIXX_HAVE_MT_SUPPORT
+
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
 #include <mutex>
 #else
 #include <boost/thread.hpp>
 #endif
 
+#endif
+
 namespace EIXX_NAMESPACE {
 namespace detail {
+
+#ifdef EIXX_HAVE_MT_SUPPORT
 
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
 typedef std::mutex                  mutex;
@@ -50,6 +56,16 @@ template <typename Mutex> struct lock_guard: public boost::lock_guard<Mutex> {
     typedef boost::mutex mutex_type;
     lock_guard(Mutex& a_m) : boost::lock_guard<Mutex>(a_m) {}
 };
+#endif
+
+#else
+
+struct mutex {};
+struct recursive_mutex {};
+template <typename Mutex> struct lock_guard {
+    lock_guard(Mutex&) {}
+};
+
 #endif
 
 } // namespace detail
