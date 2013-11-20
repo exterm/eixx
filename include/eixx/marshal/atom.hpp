@@ -215,9 +215,8 @@ class atom
 {
     size_t m_index;
 
-    typedef detail::atom_table<>::string_t string_t;
-
 public:
+    typedef detail::atom_table<>::string_t string_t;
     static detail::atom_table<>& atom_table();
 
     /// Create an empty atom
