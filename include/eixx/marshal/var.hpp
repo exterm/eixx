@@ -106,8 +106,7 @@ public:
 
     std::ostream& dump(std::ostream& out, const varbind<Alloc>* binding = NULL) const {
         if (is_any()) { return out << c_str(); }
-        const eterm<Alloc>* term = binding ? binding->find(name()) : NULL;
-        return out << (term ? term->to_string(std::string::npos, binding) : *this);
+        return out << name();
     }
 };
 
