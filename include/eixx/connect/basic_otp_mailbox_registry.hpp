@@ -172,9 +172,10 @@ bool basic_otp_mailbox_registry<Alloc, Mutex>::unregister(const atom& a_name)
     lock_guard<Mutex> guard(m_lock);
     typename std::map<atom, mailbox_ptr>::iterator it = m_by_name.find(a_name);
     if (it == m_by_name.end())
-        return;
+        return false;
     it->second.name("");
     m_by_name.erase(it);
+    return true;
 }
 
 /// Remove \a a_mbox mailbox from the registry

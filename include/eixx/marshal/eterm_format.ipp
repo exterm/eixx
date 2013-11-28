@@ -72,7 +72,7 @@ namespace marshal {
         for(char c = **fmt; c == ' ' || c == '\t' || c == '\n'; c = *(++(*fmt)));
     }
 
-    static char *pvariable(const char **fmt, char *buf)
+    static inline char *pvariable(const char **fmt, char *buf)
     {
         const char* start = *fmt;
         char c;
@@ -96,7 +96,7 @@ namespace marshal {
 
     } /* pvariable */
 
-    static char *patom(const char **fmt, char *buf)
+    static inline char *patom(const char **fmt, char *buf)
     {
         const char* start = *fmt;
         char c;
@@ -122,7 +122,7 @@ namespace marshal {
 
     /* Check if integer or float
      */
-    static char *pdigit(const char **fmt, char *buf)
+    static inline char *pdigit(const char **fmt, char *buf)
     {
         const char* start = *fmt;
         char c;
@@ -150,7 +150,7 @@ namespace marshal {
 
     } /* pdigit */
 
-    static char *pstring(const char **fmt, char *buf)
+    static inline char *pstring(const char **fmt, char *buf)
     {
         const char* start = ++(*fmt); /* skip first quote */
         char c;
@@ -176,7 +176,7 @@ namespace marshal {
 
     } /* pstring */
 
-    static char *pquotedatom(const char **fmt, char *buf)
+    static inline char *pquotedatom(const char **fmt, char *buf)
     {
         const char* start = ++(*fmt); /* skip first quote */
         char c;
