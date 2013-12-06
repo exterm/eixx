@@ -1,4 +1,4 @@
-SUBDIRS = src test
+SUBDIRS = src
 ACLOCAL_AMFLAGS = -I build-aux
 
 pkgconfigdir = $(libdir)/pkgconfig
