@@ -24,11 +24,11 @@ MAINTAINERCLEANFILES = configure build-aux/l*.m4 build-aux/*.sh \
 	aclocal.m4 Makefile.in src/Makefile.in test/Makefile.in \
     src/eixx.pc
 
-EXTRA_DIST = README LICENSE LICENSE.header license.sh \
+EXTRA_DIST = README.md LICENSE LICENSE.header license.sh \
 			 build-aux/boost.m4 build-aux/Doxyfile.in \
              bootstrap
 
 installdir = $(prefix)
-install_DATA = README LICENSE
+install_DATA = README.md LICENSE
 
 .PHONY: docs doc
